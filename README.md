@@ -1,5 +1,5 @@
 # TPISG_Automation
-This is an automation project for my CCA (TP International Students Group).
+This is an automation project for my CCA (TP International Students Group) using AppSheet and Apps Script.
 
 Automation tasks I plan to do are
 
