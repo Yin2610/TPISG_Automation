@@ -1,0 +1,108 @@
+// translate mission no to integer value upon adding event
+function addEventAndTranslateMissionNo(mission) {
+
+  let missionNo = 0;
+  if (mission == "1. Adjust to poly life") {
+    missionNo = 1;
+  }
+  else if(mission == "2. Care for IS welfare") {
+    missionNo = 2;
+  }
+  else if(mission == "3. Integrate into local community") {
+    missionNo = 3;
+  }
+  else if(mission == "4. Experience different cultures") {
+    missionNo = 4;
+  }
+  else {
+    missionNo = 5;
+  }
+  var calendarSheet = SpreadsheetApp.openById(<Calendar sheet ID>);
+  calendarSheet.getRange("C" + calendarSheet.getLastRow()).setValue(missionNo);
+}
+
+// function for creating QR codes for registration and feedback forms
+function createQRCodes(newFileID, newFileName, newFolder) {
+  var form = FormApp.openById(newFileID);
+  var url = form.getPublishedUrl();
+  var imageData = UrlFetchApp.fetch('https://chart.googleapis.com/chart', {
+    'method' : 'post',
+    'payload' : {
+      'cht': 'qr',
+      'chl': url,
+      'chs': '300x300'
+  }}).getBlob();
+  newFolder.createFile(imageData).setName(newFileName + ' QR Code.png');
+}
+
+
+// function for copying files from folder to folder
+function copyFiles(existingFolder, newFolder, eventName) {
+
+  var newFolderName = newFolder.getName();
+  var fileIterator = existingFolder.getFiles();
+
+  while (fileIterator.hasNext()) {
+    var file = fileIterator.next();
+    var type = file.getMimeType();
+
+    
+    if (newFolderName != "Admin") {
+      var newFile = file.makeCopy(file.getName(), newFolder);
+
+      var newFileID = newFile.getId();
+      var newFileName = newFile.getName().replace("[Event Name]", eventName);
+      DriveApp.getFileById(newFileID).setName(newFileName);
+    }
+
+    /*  
+        Feedback form has responses spreadsheet inside the Admin folder.
+        If the responses spreadsheet is copied from one folder to another, the feedback form is automatically copied.
+        So, the feedback form doesn't need to be copied by code.
+    */
+    else {
+      if (type == MimeType.GOOGLE_SHEETS) {
+
+        // renaming spreadsheet names inside Admin folder
+        var newFile = file.makeCopy(file.getName(), newFolder);
+        var newSpreadSheetName = newFile.getName().replace("[Event Name]", eventName);
+        newFile.setName(newSpreadSheetName);
+
+        // getting form Id of which is bound to spreadsheet, renaming, moving them and creating QR codes 
+        var spreadsheetFile = SpreadsheetApp.open(newFile);
+        var copiedFormUrl = spreadsheetFile.getFormUrl();
+        var form = FormApp.openByUrl(copiedFormUrl);
+        var formId = form.getId();
+        var file = DriveApp.getFileById(formId);
+        var newFileName = file.getName().replace("Copy of [Event Name]", eventName);
+        file.setName(newFileName);
+        file.moveTo(newFolder); 
+        createQRCodes(formId, newFileName, newFolder);
+      }
+    }
+  }
+}
+
+
+// function to create event folder in Drive when added a new event in AppSheet 
+function createEventFolder(eventName) {
+
+  // get the destination folder and newTemplatePackage (folder that has new event templates)
+  const sharedFolder = DriveApp.getFolderById("<Parent folder ID of destination folder>");       
+  const newTemplatePackage = DriveApp.getFolderById("<Source folder ID>");
+
+  // create a new folder for the event
+  var eventFolder = sharedFolder.createFolder(eventName); // destination folder
+
+  // copy files in newTemplatePackage to eventFolder
+  copyFiles(newTemplatePackage, eventFolder, eventName);
+
+  // copy folders in newTemplatePackage to eventFolder
+  var folderIterator = newTemplatePackage.getFolders();
+  while (folderIterator.hasNext()) {
+    var folder = folderIterator.next();
+    var folderName = folder.getName();
+    let newFolder = eventFolder.createFolder(folderName);
+    copyFiles(folder, newFolder, eventName);
+  }
+}
