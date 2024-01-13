@@ -1,0 +1,148 @@
+function onOpen() {
+  let ui = SpreadsheetApp.getUi();
+  ui.createMenu('TPISG menu')                             // create a custom menu "TPISG menu"
+  .addItem('📚 Send to database', 'sendToDB')             // add a sub-menu "Send to database"
+  .addSeparator()
+  .addItem('📊 Create charts', 'createChartsForAAR')     // add a sub-menu "Create charts"
+  .addToUi();
+}
+
+/*   
+  Function sendToDB is for copying records from feedback form data to TPISG database
+ */
+function sendToDB() {
+
+  let ui = SpreadsheetApp.getUi();
+  let response = ui.alert('Have you checked if the organizers\' records are inside and there is no duplicate row?', ui.ButtonSet.YES_NO);
+
+  if(response == ui.Button.YES) {
+    let eventName = ui.prompt('Enter event name:').getResponseText();
+    let date = ui.prompt('Enter event date(s):').getResponseText();
+    let epc = ui.prompt('Enter EPC code:').getResponseText();
+
+    let feedbackData = SpreadsheetApp.getActiveSpreadsheet();
+    let feedbackSheet = feedbackData.getSheets()[0];
+
+    // sorting Full Name column
+    feedbackSheet.sort(2);     
+
+    // select the TPISG database spreadsheet
+    let tpisgDB = SpreadsheetApp.openById("<TPISG database sheet ID>");
+    let overAllDBSheet = tpisgDB.getSheetByName("Overall Database");
+
+    // get the last row of TPISG DB and increment 1 to get the starting row where new records will be inserted
+    let lastRowOfSheet = overAllDBSheet.getLastRow();      
+    let rowStart = lastRowOfSheet + 1;
+
+    // create a new sheet in TPISG for the event
+    let copySheet = feedbackSheet.copyTo(tpisgDB);
+    copySheet.setName((tpisgDB.getNumSheets()-1) + ". " + eventName);
+
+    // getting the last row number to know the total rows of records
+    let lastRow = copySheet.getLastRow();
+
+    // fillRangeStart is for filling the data in the Overall Database tab of TPISG DB spreadsheet
+    let fillRangeStart = lastRowOfSheet + 1;  
+
+    /* excluding header row in feedback and starting row in fill range 
+      cuz starting row starts writing the data so is counted in the total number of records
+    */
+    let fillRangeEnd = lastRow - 2; 
+
+    // filling in the first column "No" with incrementing numbers
+    let fillNoRange = overAllDBSheet.getRange("A" + fillRangeStart + ":A" + (fillRangeStart + fillRangeEnd));
+    for(var i = 1; i < lastRow; i++) {
+      let cell = fillNoRange.getCell(i, 1);
+      cell.setValue(i);
+    }
+
+    // specifying Full Name and Admin No. range to copy from previously created copy sheet
+    let copyRange1 = copySheet.getRange("B2:C" + lastRow);
+
+    // the rowEnd is the ending row in Overall Database sheet
+    let rowEnd = rowStart + lastRow - 1;
+
+    // copying Full Name and Admin No. range to Overall Database sheet
+    // paramters for copyValuesToRange = gridId, column, columnEnd, row, rowEnd
+    copyRange1.copyValuesToRange(overAllDBSheet, 2, 3, rowStart, rowEnd);
+
+    // filling Event column with user input event name 
+    let fillEventRange = overAllDBSheet.getRange("D" + fillRangeStart + ":D" + (fillRangeStart + fillRangeEnd));
+    fillEventRange.setValue(eventName);
+
+    // filling Event column with user input event date
+    let fillDateRange = overAllDBSheet.getRange("E" + fillRangeStart + ":E" + (fillRangeStart + fillRangeEnd));
+    fillDateRange.setValue(date);
+
+    // copying Role, Student Email, Personal Email, Contact No data ranges
+    let copyRange2 = copySheet.getRange("D2:G" + lastRow);
+    copyRange2.copyValuesToRange(overAllDBSheet, 6, 9, rowStart, rowEnd);
+
+    // copying Nationality, School of Study, Year of Study data ranges
+    let copyRange3 = copySheet.getRange("I2:K" + lastRow);
+    copyRange3.copyValuesToRange(overAllDBSheet, 10,  12, rowStart, rowEnd);
+
+    // filling Event EPC Code column with user input EPC code 
+    let fillEPCRange = overAllDBSheet.getRange("M" + fillRangeStart + ":M" + (fillRangeStart + fillRangeEnd));
+    fillEPCRange.merge();
+    fillEPCRange.setValue(epc);
+    fillEPCRange.setVerticalAlignment("middle");
+    fillEPCRange.setHorizontalAlignment("center");
+
+    ui.alert("Done sending to database :)");
+  }
+  else {
+    ui.alert("Please check them before continuing.");
+  }
+}
+
+/*   
+  Function createNewSheetAndChart is for creating a new sheet and generate a pie chart 
+ */
+function createNewSheetAndChart(newSheetName, role, selectCol, label1, chartTitle) {
+  let feedbackData = SpreadsheetApp.getActiveSpreadsheet();
+  let formResponseSheet = feedbackData.getSheets()[0];
+
+  let newSheet = feedbackData.insertSheet();
+  newSheet.setName(newSheetName);
+  let lastRowOfFormResponse = formResponseSheet.getLastRow();
+
+  newSheet.getRange("A1").setFormula("=QUERY('Form responses 1'!A2:L"+ lastRowOfFormResponse +", \"SELECT "+ selectCol +", COUNT("+ selectCol +") WHERE LOWER(D) CONTAINS '"+ role +"' GROUP BY "+ selectCol +" LABEL "+ selectCol +" '"+ label1 +"', COUNT("+ selectCol +") 'Headcount'\")");
+  let lastRowOfNewSheet = newSheet.getLastRow();   
+
+  newSheet.getRange('A'+(lastRowOfNewSheet+1)).setValue("Total");
+  newSheet.getRange('B'+(lastRowOfNewSheet+1)).setFormula("=SUM(B2:B"+ (lastRowOfNewSheet) +")");
+  newSheet.getRange('C1').setValue("Percentage");
+  newSheet.getRange('C'+(lastRowOfNewSheet+1)).setValue("100%");
+
+  console.log(lastRowOfNewSheet);
+  for(let i=2; i<=lastRowOfNewSheet; i++) {
+    newSheet.getRange('C' + i).setFormula("=CONCAT((B"+ i +"/B"+ (lastRowOfNewSheet + 1) +")*100, \"%\")");
+    newSheet.getRange('C' + i).setHorizontalAlignment("right");
+  }
+
+  let range = newSheet.getRange('A1:B' + lastRowOfNewSheet);
+
+  let chartBuilder = newSheet.newChart();
+  chartBuilder.addRange(range)
+  .setChartType(Charts.ChartType.PIE)
+  .setPosition(1, 5, 0, 0)
+  .setOption('title', newSheet.getRange('B' + (lastRowOfNewSheet+1)).getValue() + chartTitle)
+  .setOption('pieSliceText', 'value');
+
+  const pieChart = chartBuilder.build();
+  newSheet.insertChart(pieChart);
+}
+
+/*   
+  Function createChartsForAAR is for creating charts based on Student Helpers and Participants by Nationality, by Year of Study
+ */
+function createChartsForAAR() {
+  createNewSheetAndChart("Helpers' Nationalities", "helper", "I", "Nationality", " Student Helpers by Nationality");
+
+  createNewSheetAndChart("Helpers' Year of Study", "helper", "K", "Year of Study", " Student Helpers by Year of Study");
+
+  createNewSheetAndChart("Participants' Nationalities", "participant", "I", "Nationality", " Participants by Nationality");
+
+  createNewSheetAndChart("Participants' Year of Study", "participant", "K", "Year of Study", " Participants by Year of Study");
+}
